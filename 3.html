@@ -40,34 +40,16 @@
 
 <script>
     function calculate() {
+        // Получение значений из полей формы
         var number1 = parseFloat(document.getElementById('number1').value);
         var operation = document.getElementById('operation').value;
         var textInput = document.getElementById('text-input').value;
-        var result = 0;
 
-        switch (operation) {
-            case 'add':
-                result = number1 + parseFloat(textInput);
-                break;
-            case 'subtract':
-                result = number1 - parseFloat(textInput);
-                break;
-            case 'multiply':
-                result = number1 * parseFloat(textInput);
-                break;
-            case 'divide':
-                if (parseFloat(textInput) !== 0) {
-                    result = number1 / parseFloat(textInput);
-                } else {
-                    result = 'Деление на ноль невозможно';
-                }
-                break;
-            default:
-                result = 'Выберите операцию';
-                break;
-        }
+        // Обработка операции (здесь оставляем только вывод "Hello World")
+        var result = "Hello World";
 
-        document.getElementById('result').innerText = 'Результат: ' + result;
+        // Вывод результата
+        document.getElementById('result').innerText = result;
     }
 </script>
 
