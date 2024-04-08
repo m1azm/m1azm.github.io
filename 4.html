@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Сохранение IP-адреса</title>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+<script>
+$(document).ready(function(){
+    $.getJSON('https://api.ipify.org?format=json', function(data){
+        var ipAddress = data.ip;
+        $.ajax({
+            url: 'save_ip.php', // Путь к серверному скрипту для сохранения IP
+            type: 'POST',
+            data: {ip: ipAddress},
+            success: function(response){
+                console.log('IP адрес успешно сохранен');
+            },
+            error: function(){
+                console.error('Ошибка при сохранении IP адреса');
+            }
+        });
+    });
+});
+</script>
+</head>
+<body>
+</body>
+</html>
