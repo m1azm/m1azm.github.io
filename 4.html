@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IP Analyzer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f0f0f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            text-align: center;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: white;
+            margin: 20px;
+            width: 90%;
+            max-width: 600px;
+        }
+
+        #map {
+            height: 60vh;
+            width: 100%;
+            margin: 10px 0;
+            border-radius: 10px;
+            touch-action: none;
+        }
+
+        .info {
+            text-align: center;
+            padding: 10px;
+        }
+
+        #status, #location-info {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f8f8;
+            border-radius: 5px;
+        }
+
+        #error {
+            color: red;
+            display: none;
+            padding: 10px;
+            margin: 10px 0;
+            background: #ffe6e6;
+            border-radius: 5px;
+        }
+
+        .leaflet-control-attribution {
+            font-size: 8px !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Анализатор соединения</h1>
+        <p id="status">Инициализация...</p>
+        <p id="error"></p>
+    </div>
+
+    <div class="container">
+        <div class="info">
+            <p id="location-info">Определение местоположения...</p>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        const API_CONFIG = {
+            ipServices: [
+                'https://api.ipify.org?format=json',
+                'https://ip.seeip.org/json',
+                'https://worldtimeapi.org/api/ip'
+            ],
+            geoProviders: [
+                {
+                    url: ip => `https://ipapi.co/${ip}/json/`,
+                    parser: data => ({
+                        lat: parseFloat(data.latitude),
+                        lng: parseFloat(data.longitude),
+                        city: data.city,
+                        country: data.country_name
+                    })
+                },
+                {
+                    url: ip => `https://freeipapi.com/api/json/${ip}`,
+                    parser: data => ({
+                        lat: data.latitude,
+                        lng: data.longitude,
+                        city: data.cityName,
+                        country: data.countryName
+                    })
+                }
+            ],
+            fallbackCoords: [55.7558, 37.6173] // Москва как запасной вариант
+        };
+
+        let mapInstance = null;
+
+        // Утилиты
+        function showError(message) {
+            const errorEl = document.getElementById('error');
+            errorEl.style.display = 'block';
+            errorEl.textContent = message;
+        }
+
+        async function safeFetch(url, options = {}) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+                
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                return response.ok ? response.json() : null;
+            } catch(error) {
+                console.warn(`Fetch error: ${url}`, error);
+                return null;
+            }
+        }
+
+        // Основные функции
+        async function detectIP() {
+            for (const service of API_CONFIG.ipServices) {
+                const data = await safeFetch(service);
+                if (data?.ip) return data.ip;
+                if (data?.client_ip) return data.client_ip; // Для worldtimeapi
+            }
+            throw new Error('Не удалось определить IP');
+        }
+
+        async function locateIP(ip) {
+            for (const provider of API_CONFIG.geoProviders) {
+                try {
+                    const data = await safeFetch(provider.url(ip));
+                    if (!data) continue;
+                    
+                    const result = provider.parser(data);
+                    if (result.lat && result.lng) {
+                        return result;
+                    }
+                } catch(e) { continue; }
+            }
+            return API_CONFIG.fallbackCoords;
+        }
+
+        async function initMap(coords, metadata = {}) {
+            try {
+                if (mapInstance) {
+                    mapInstance.off();
+                    mapInstance.remove();
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                mapInstance = L.map('map', {
+                    renderer: L.canvas(),
+                    zoomControl: false,
+                    preferCanvas: true
+                }).setView([coords.lat, coords.lng], 13);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap',
+                    maxZoom: 18,
+                    minZoom: 2
+                }).addTo(mapInstance);
+
+                L.marker([coords.lat, coords.lng], {
+                    title: 'Примерное местоположение',
+                    alt: `Координаты: ${coords.lat}, ${coords.lng}`
+                }).addTo(mapInstance);
+
+                mapInstance.invalidateSize();
+                mapInstance.tap?.disable();
+
+                document.getElementById('location-info').innerHTML = `
+                    ${metadata.city ? `<b>Город:</b> ${metadata.city}<br>` : ''}
+                    ${metadata.country ? `<b>Страна:</b> ${metadata.country}<br>` : ''}
+                    <b>Координаты:</b> ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}
+                `;
+
+            } catch(mapError) {
+                showError('Ошибка при загрузке карты');
+                console.error('Map error:', mapError);
+            }
+        }
+
+        // Основной поток
+        async function main() {
+            try {
+                let ip;
+                
+                // Этап 1: Определение IP
+                document.getElementById('status').textContent = 'Проверка сети...';
+                try {
+                    ip = await detectIP();
+                    document.getElementById('status').textContent = `IP: ${ip}`;
+                } catch(ipError) {
+                    document.getElementById('status').textContent = 'Базовые проверки пройдены';
+                }
+
+                // Этап 2: Определение локации
+                if (ip) {
+                    document.getElementById('location-info').textContent = 'Поиск местоположения...';
+                    const locationData = await locateIP(ip);
+                    await initMap(locationData, {
+                        city: locationData.city,
+                        country: locationData.country
+                    });
+                }
+
+            } catch(mainError) {
+                showError('Критическая ошибка: обновите страницу');
+                console.error('Main error:', mainError);
+            }
+        }
+
+        // Запуск при полной загрузке
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(main, 500);
+        });
+    </script>
+</body>
+</html>
