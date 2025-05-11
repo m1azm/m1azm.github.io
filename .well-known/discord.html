@@ -1,1 +1,145 @@
-dh=15c75ea6550189f27f0311eb5b1c2849f6713eee
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fluxus Nexus</title>
+  <!-- Unconventional fonts and CSS variables -->
+  <style>
+    :root {
+      --base-color: #0a0a0a;
+      --accent1: #ff3c78;
+      --accent2: #00d2ff;
+      --text: #fafafa;
+      --transition: all 0.6s ease-in-out;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--base-color);
+      color: var(--text);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow-x: hidden;
+    }
+    /* Floating circular nav menu */
+    .circle-menu {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      width: 4rem;
+      height: 4rem;
+      background: radial-gradient(circle, var(--accent1), var(--accent2));
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+      z-index: 10;
+    }
+    .circle-menu:hover {
+      transform: scale(1.2) rotate(45deg);
+    }
+    /* Hidden menu items around circle */
+    .menu-items {
+      position: absolute;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+    }
+    .menu-items a {
+      position: absolute;
+      width: 2.5rem;
+      height: 2.5rem;
+      background: var(--accent2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--base-color);
+      text-decoration: none;
+      transition: var(--transition);
+      opacity: 0;
+    }
+    .circle-menu.active .menu-items a {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .circle-menu.active .item1 { transform: translate(-80px, -20px); }
+    .circle-menu.active .item2 { transform: translate(-60px, -70px); }
+    .circle-menu.active .item3 { transform: translate(-20px, -100px); }
+
+    /* Sections with skewed panels */
+    section {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .panel {
+      width: 120%;
+      height: 120%;
+      position: absolute;
+      transform-origin: center;
+      transition: var(--transition);
+    }
+    #panel1 { background: rgba(255, 60, 120, 0.2); transform: skewY(-5deg); }
+    #panel2 { background: rgba(0, 210, 255, 0.2); transform: skewY(5deg); }
+    .content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      max-width: 600px;
+      padding: 2rem;
+      backdrop-filter: blur(4px);
+    }
+    h1 { font-size: 3rem; margin-bottom: 1rem; }
+    p { font-size: 1.2rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <!-- Floating menu trigger -->
+  <div class="circle-menu" id="menuBtn">
+    <span>&#9776;</span>
+    <div class="menu-items">
+      <a href="#about" class="item1" title="About">A</a>
+      <a href="#works" class="item2" title="Works">W</a>
+      <a href="#contact" class="item3" title="Contact">C</a>
+    </div>
+  </div>
+
+  <!-- Skewed sections -->
+  <section id="about">
+    <div class="panel" id="panel1"></div>
+    <div class="content">
+      <h1>Fluxus Nexus</h1>
+      <p>Welcome to the crossroads of creativity and chaos. Scroll to explore an ever-shifting experience, where nothing stays the same.</p>
+    </div>
+  </section>
+
+  <section id="works">
+    <div class="panel" id="panel2"></div>
+    <div class="content">
+      <h1>Our Works</h1>
+      <p>Discover projects that bend reality, from interactive audio-visual sculptures to dynamic data symphonies.</p>
+    </div>
+  </section>
+
+  <section id="contact">
+    <div class="panel" id="panel1"></div>
+    <div class="content">
+      <h1>Get in Touch</h1>
+      <p>dh=15c75ea6550189f27f0311eb5b1c2849f6713eee</p>
+    </div>
+  </section>
+
+  <!-- JS for menu toggling -->
+  <script>
+    const menuBtn = document.getElementById('menuBtn');
+    menuBtn.addEventListener('click', () => {
+      menuBtn.classList.toggle('active');
+    });
+  </script>
+</body>
+</html>
