@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knife Hit (меню паузы и Game Over)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0; overflow: hidden; background: #222;
+      display: flex; justify-content: center; align-items: center;
+      height: 100vh; user-select: none;
+      font-family: Arial, sans-serif;
+    }
+    #gameContainer { position: relative; }
+    canvas {
+      background: #111; box-shadow: 0 0 20px rgba(0,0,0,0.7);
+      border-radius: 20px; transition: background 0.5s;
+      display: block;
+    }
+    .overlay {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      color: #fff; font-size: 24px;
+      visibility: hidden;
+    }
+    .overlay.visible { visibility: visible; }
+    .overlay button {
+      margin: 10px; padding: 10px 20px;
+      font-size: 18px; cursor: pointer;
+      border: none; border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <div id="pauseOverlay" class="overlay">
+      <div>Пауза</div>
+      <button id="resumeBtn">Продолжить</button>
+      <button id="restartBtn">Рестарт</button>
+    </div>
+    <div id="gameOverOverlay" class="overlay">
+      <div id="gameOverText">Game Over</div>
+      <div id="finalScore"></div>
+      <button id="restartGameOverBtn">Рестарт</button>
+    </div>
+  </div>
+
+  <script>
+    class KnifeHitGame {
+      constructor(canvasId) {
+        this.bestScore = parseInt(localStorage.getItem('knifeHitBestScore')) || 0;
+        
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.container = document.getElementById('gameContainer');
+        this.pauseOverlay = document.getElementById('pauseOverlay');
+        this.gameOverOverlay = document.getElementById('gameOverOverlay');
+        this.finalScoreEl = document.getElementById('finalScore');
+        this.resumeBtn = document.getElementById('resumeBtn');
+        this.restartBtn = document.getElementById('restartBtn');
+        this.restartGameOverBtn = document.getElementById('restartGameOverBtn');
+
+        this.centerX = this.canvas.width / 2;
+        this.centerY = this.canvas.height / 3;
+        this.startY = this.canvas.height - 60;
+        this.rotation = 0;
+        this.attachedKnives = [];
+        this.movingKnives = [];
+        this.score = 0;
+        this.level = 1;
+        this.rotationSpeed = 0.001;
+        this.nextLevelScore = 5;
+        this.levelColors = ['#111','#1a1a2e','#16213e','#0f3460','#53354a'];
+        this.sounds = { throw: new Audio('assets/throw.mp3'), hit: new Audio('assets/hit.mp3'), fail: new Audio('assets/fail.mp3') };
+        this.hitAnimating = false;
+        this.hitAnimStart = 0;
+        this.hitAnimDuration = 200;
+
+        this.isPaused = false;
+        this.isGameOver = false;
+
+        this.woodGradient = this.createWoodGradient();
+        this.knifeGradient = this.createKnifeGradient();
+        this.init();
+      }
+
+      createWoodGradient() {
+        const g = this.ctx.createRadialGradient(0, 0, 20, 0, 0, 50);
+        g.addColorStop(0, '#D2A679'); g.addColorStop(1, '#8B4513'); return g;
+      }
+
+      createKnifeGradient() {
+        const g = this.ctx.createLinearGradient(-2, -60, 2, -20);
+        g.addColorStop(0, '#f0f0f0'); g.addColorStop(1, '#999'); return g;
+      }
+
+      init() {
+        const slice = (Math.PI*2)/3;
+        for(let i=0;i<3;i++) this.attachedKnives.push(i*slice);
+        this.updateCanvasColor();
+
+        this.canvas.addEventListener('click', ()=> this.handleClick());
+        document.addEventListener('keydown', e => {
+          if(e.key === 'p') this.togglePause();
+        });
+        this.resumeBtn.addEventListener('click', ()=> this.togglePause());
+        this.restartBtn.addEventListener('click', ()=> this.restart());
+        this.restartGameOverBtn.addEventListener('click', ()=> this.restart());
+
+        this.lastTime = performance.now();
+        requestAnimationFrame(ts => this.gameLoop(ts));
+      }
+
+      handleClick() {
+        if(this.isPaused || this.isGameOver) return;
+        if(!this.movingKnives.length) {
+          this.sounds.throw.currentTime=0; this.sounds.throw.play();
+          this.movingKnives.push({x:this.centerX,y:this.startY,speed:12});
+        }
+      }
+
+      togglePause() {
+        if(this.isGameOver) return;
+        this.isPaused = !this.isPaused;
+        this.pauseOverlay.classList.toggle('visible', this.isPaused);
+        if(!this.isPaused) {
+          this.lastTime = performance.now();
+          requestAnimationFrame(ts => this.gameLoop(ts));
+        }
+      }
+
+      update(delta) {
+        this.rotation += this.rotationSpeed * delta;
+        this.movingKnives = this.movingKnives.filter(k => {
+          k.y -= k.speed;
+          if(k.y <= this.centerY+50) {
+            const angle = Math.atan2(k.x-this.centerX, this.centerY-k.y) - this.rotation;
+            const norm = (angle + Math.PI*2)%(Math.PI*2);
+            if(this.attachedKnives.some(a=>Math.abs(norm-a)<0.2)) {
+              this.endGame(); return false;
+            }
+            this.attachedKnives.push(norm);
+            this.score++;
+            this.sounds.hit.currentTime=0; this.sounds.hit.play();
+            this.triggerHitAnim(); this.checkLevelUp();
+            return false;
+          }
+          return true;
+        });
+      }
+
+      endGame() {
+        this.isGameOver = true;
+        this.sounds.fail.currentTime = 0;
+        this.sounds.fail.play();
+
+        if (this.score > this.bestScore) {
+          this.bestScore = this.score;
+          localStorage.setItem('knifeHitBestScore', this.bestScore);
+        }
+
+        this.finalScoreEl.textContent = `Ваш счёт: ${this.score}, уровень: ${this.level}, рекорд: ${this.bestScore}`;
+        this.gameOverOverlay.classList.add('visible');
+      }
+
+      restart() {
+        this.attachedKnives = [];
+        this.movingKnives = [];
+        this.score = 0; this.level = 1; this.rotationSpeed = 0.001; this.nextLevelScore = 5;
+        this.isPaused = false; this.isGameOver = false;
+        this.pauseOverlay.classList.remove('visible');
+        this.gameOverOverlay.classList.remove('visible');
+        const slice = (Math.PI*2)/3;
+        for(let i=0;i<3;i++) this.attachedKnives.push(i*slice);
+        this.updateCanvasColor();
+        this.lastTime = performance.now();
+        requestAnimationFrame(ts => this.gameLoop(ts));
+      }
+
+      checkLevelUp() {
+        if(this.score>=this.nextLevelScore) {
+          this.level++; this.nextLevelScore+=5;
+          this.rotationSpeed*=1.2; this.updateCanvasColor();
+        }
+      }
+
+      updateCanvasColor() {
+        const idx=(this.level-1)%this.levelColors.length;
+        this.canvas.style.background = this.levelColors[idx];
+      }
+
+      triggerHitAnim() {
+        this.hitAnimating = true; this.hitAnimStart = performance.now();
+      }
+
+      render() {
+        const now = performance.now();
+        let scale = 1;
+        if(this.hitAnimating) {
+          const e = now - this.hitAnimStart;
+          if(e < this.hitAnimDuration) scale = 1 + 0.1*(1 - e/this.hitAnimDuration);
+          else this.hitAnimating = false;
+        }
+        this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
+        this.ctx.save(); this.ctx.translate(this.centerX,this.centerY);
+        this.ctx.scale(scale,scale); this.ctx.rotate(this.rotation);
+        this.ctx.shadowColor='rgba(0,0,0,0.5)'; this.ctx.shadowBlur=15;
+        this.ctx.fillStyle=this.woodGradient;
+        this.ctx.beginPath(); this.ctx.arc(0,0,50,0,Math.PI*2); this.ctx.fill();
+        this.ctx.shadowBlur=0;
+        this.attachedKnives.forEach(angle=>{
+          this.ctx.save(); this.ctx.rotate(angle);
+          this.ctx.fillStyle=this.knifeGradient; this.ctx.shadowColor='rgba(0,0,0,0.3)'; this.ctx.shadowBlur=5;
+          this.ctx.fillRect(-2,-60,4,40); this.ctx.restore();
+        }); this.ctx.restore();
+        this.movingKnives.forEach(k=> this.drawKnife(k.x,k.y));
+        if(!this.movingKnives.length) this.drawKnife(this.centerX,this.startY,true);
+        this.drawScore(); this.drawLevel();
+      }
+
+      drawKnife(x,y,hl=false){const g=this.ctx.createLinearGradient(x-2,y-20,x+2,y+20);g.addColorStop(0,hl?'#fff':'#f0f0f0');g.addColorStop(1,'#999');this.ctx.save();this.ctx.fillStyle=g;if(hl){this.ctx.shadowColor='rgba(255,255,255,0.7)';this.ctx.shadowBlur=10;}this.ctx.fillRect(x-2,y-20,4,40);this.ctx.restore();}
+      drawScore(){this.ctx.save();this.ctx.fillStyle='#fff';this.ctx.font='20px Arial';this.ctx.textAlign='left';this.ctx.fillText(`Счёт: ${this.score}`,10,this.canvas.height-20);this.ctx.restore();}
+      drawLevel(){this.ctx.save();this.ctx.fillStyle='#fff';this.ctx.font='20px Arial';this.ctx.textAlign='right';this.ctx.fillText(`Уровень: ${this.level}`,this.canvas.width-10,this.canvas.height-20);this.ctx.restore();}
+
+      gameLoop(ts) {
+        if(this.isPaused || this.isGameOver) return;
+        const delta = ts - this.lastTime; this.lastTime = ts;
+        this.update(delta);
+        this.render();
+        requestAnimationFrame(t => this.gameLoop(t));
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', ()=> new KnifeHitGame('gameCanvas'));
+  </script>
+</body>
+</html>
